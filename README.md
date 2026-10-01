@@ -35,7 +35,9 @@ independiente y multi-portal: no toca el puente de producción de Botika.
 
 ## Puesta en marcha
 
-### 1. Publicar connect24 en una URL HTTPS pública
+### 1. Publicar connect24 en una URL HTTPS pública, separada de BOT SRPY
+*(Guía para Coolify en [docs/despliegue-aislado.md](docs/despliegue-aislado.md).)*
+
 Necesita un proceso Node 22.13+ siempre encendido y un disco persistente (SQLite en `/app/data`): no sirve para
 funciones serverless. `Dockerfile` incluido.
 
