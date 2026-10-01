@@ -1,4 +1,5 @@
 import type { OpenLine } from '../bitrix/connector.js';
+import { DEFAULT_GRAPH_URL } from '../providers/whatsapp-cloud.js';
 import type { LineConfig } from '../store.js';
 
 export const esc = (v: unknown): string =>
@@ -53,7 +54,7 @@ export function installDonePage(): string {
     'connect24 · Instalado',
     `<h1>connect24 instalado</h1>
      <p class="sub">El conector de WhatsApp ya está registrado en tus Canales Abiertos.</p>
-     <div class="alert good">Siguiente paso: en <b>Contact Center</b> abre el conector <b>WhatsApp (connect24)</b>, elige o crea un canal abierto y completa las credenciales de Botika.</div>`,
+     <div class="alert good">Siguiente paso: en <b>Contact Center</b> abre el conector <b>WhatsApp (connect24)</b>, elige o crea un canal abierto y completa el ID del número y el token de WhatsApp.</div>`,
     `try{BX24.init(function(){BX24.installFinish();});}catch(e){}`,
   );
 }
@@ -89,8 +90,8 @@ export function appPage(d: AppPageData): string {
      <div class="card"><ol style="margin:0;padding-left:18px">
        <li>Ve a <b>Contact Center → Canales abiertos</b> y agrega el conector <b>${esc(d.connectorName)}</b>.</li>
        <li>Elige (o crea) el canal abierto que atenderá ese número.</li>
-       <li>Completa la URL de la API y el token de Botika, y guarda.</li>
-       <li>Copia la URL de webhook que te muestra connect24 y pégala en Botika.</li></ol></div>`,
+       <li>Completa el ID del número y el token de acceso de WhatsApp (Meta), y guarda.</li>
+       <li>Copia la URL de webhook que te muestra connect24: es el destino de los mensajes entrantes (Meta directo o reenviados por Botika).</li></ol></div>`,
   );
 }
 
@@ -111,23 +112,24 @@ export function settingsPage(d: SettingsPageData): string {
       ? `<div class="alert good">Guardado y conector activado en el canal abierto #${esc(d.lineId)}.</div>`
       : '';
   const webhook = d.webhookUrl
-    ? `<div class="card"><b>URL de webhook para Botika</b><small>Pégala en Botika como destino de los mensajes entrantes de este número.</small><p><code>${esc(d.webhookUrl)}</code></p></div>`
-    : `<div class="card"><b>URL de webhook para Botika</b><small>Se genera al guardar por primera vez.</small></div>`;
+    ? `<div class="card"><b>URL de webhook</b><small>Destino de los mensajes entrantes de este número: configúrala en Meta, o en Botika para que los reenvíe.</small><p><code>${esc(d.webhookUrl)}</code></p>
+       <small>Si Meta llama directamente, usa este mismo valor como «token de verificación»:</small><p><code>${esc(d.line?.routeKey)}</code></p></div>`
+    : `<div class="card"><b>URL de webhook</b><small>Se genera al guardar por primera vez.</small></div>`;
 
   return layout(
     'connect24 · WhatsApp',
-    `<h1>Conectar WhatsApp (Botika)</h1>
+    `<h1>Conectar WhatsApp (coexistencia)</h1>
      <p class="sub">Canal abierto <span class="mono">#${esc(d.lineId)}</span></p>
      ${alert}
      <form method="post" action="/bitrix/settings/save">
        <input type="hidden" name="member_id" value="${esc(d.memberId)}">
        <input type="hidden" name="auth_id" value="${esc(d.authId)}">
        <input type="hidden" name="line" value="${esc(d.lineId)}">
-       <label for="base_url">URL de la API de Botika</label>
-       <input id="base_url" name="base_url" type="url" required placeholder="https://..." value="${esc(d.line?.baseUrl)}">
+       <label for="base_url">URL de la API de WhatsApp (Graph API de Meta)</label>
+       <input id="base_url" name="base_url" type="url" required placeholder="https://..." value="${esc(d.line?.baseUrl ?? DEFAULT_GRAPH_URL)}">
        <label for="phone_number_id">ID del número (phone number id)</label>
        <input id="phone_number_id" name="phone_number_id" type="text" required value="${esc(d.line?.phoneNumberId)}">
-       <label for="token">Token de acceso</label>
+       <label for="token">Token de acceso (Meta)</label>
        <input id="token" name="token" type="password" autocomplete="off" ${d.line ? '' : 'required'} placeholder="${d.line ? '•••••••• (déjalo vacío para conservarlo)' : ''}">
        <small>Se guarda cifrado. Nunca se muestra de nuevo.</small>
        <button type="submit">Guardar y activar</button>

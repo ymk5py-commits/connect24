@@ -2,17 +2,15 @@ import { ProviderError } from './types.js';
 import type { InboundMessage, ProviderEvent, StatusUpdate, WhatsAppProvider } from './types.js';
 
 /**
- * Botika adapter.
- *
- * ASSUMPTION - TO VERIFY: Botika's WhatsApp Business API docs (waofficial.botika.online/docs/api/overview)
- * could not be read while building this (host blocked by the sandbox proxy). This adapter therefore assumes
- * Botika exposes the Meta WhatsApp Cloud API shape:
- *   - send:    POST {baseUrl}/{phoneNumberId}/messages   with Bearer token
- *   - webhook: { entry: [{ changes: [{ field, value: { messages | statuses | message_echoes } }] }] }
- * If Botika's real contract differs, only this file needs to change: nothing else in the app knows the
- * wire format.
+ * WhatsApp Business via Meta's Cloud API (the coexistence number connected through Embedded Signup).
+ *   - send:    POST {baseUrl}/{phoneNumberId}/messages with a Bearer token (baseUrl = https://graph.facebook.com/vXX.X)
+ *   - webhook: { entry: [{ changes: [{ field, value: { metadata, contacts, messages | statuses } }] }] }
+ * The webhook can reach connect24 straight from Meta, or forwarded unchanged by Botika (see docs/botika-forwarding.md).
+ * Nothing outside this file knows the wire format.
  */
-export interface BotikaConfig {
+export const DEFAULT_GRAPH_URL = 'https://graph.facebook.com/v21.0';
+
+export interface WhatsAppCloudConfig {
   baseUrl: string;
   token: string;
   phoneNumberId: string;
@@ -24,9 +22,9 @@ const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && 
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
 
-export class BotikaProvider implements WhatsAppProvider {
+export class WhatsAppCloudProvider implements WhatsAppProvider {
   constructor(
-    private readonly cfg: BotikaConfig,
+    private readonly cfg: WhatsAppCloudConfig,
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
@@ -40,6 +38,10 @@ export class BotikaProvider implements WhatsAppProvider {
         if (!isObj(change) || !isObj(change.value)) continue;
         const value = change.value;
         const field = str(change.field);
+
+        // One forwarder may carry several numbers: only take the events addressed to this line's number.
+        const receivedBy = isObj(value.metadata) ? str(value.metadata.phone_number_id) : '';
+        if (receivedBy && receivedBy !== this.cfg.phoneNumberId) continue;
 
         const names = new Map<string, string>();
         for (const contact of arr(value.contacts)) {
@@ -110,10 +112,10 @@ export class BotikaProvider implements WhatsAppProvider {
     const body = (await res.json().catch(() => ({}))) as Json;
     if (!res.ok) {
       const detail = isObj(body.error) ? str(body.error.message) : '';
-      throw new ProviderError(`Botika send failed (HTTP ${res.status}) ${detail}`.trim(), res.status);
+      throw new ProviderError(`WhatsApp send failed (HTTP ${res.status}) ${detail}`.trim(), res.status);
     }
     const messageId = isObj(arr(body.messages)[0]) ? str((arr(body.messages)[0] as Json).id) : '';
-    if (!messageId) throw new ProviderError('Botika send succeeded but returned no message id');
+    if (!messageId) throw new ProviderError('WhatsApp send succeeded but returned no message id');
     return { messageId };
   }
 }

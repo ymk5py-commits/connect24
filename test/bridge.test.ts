@@ -33,7 +33,7 @@ describe('WhatsApp -> Bitrix', () => {
     expect(call?.params).toMatchObject({
       CONNECTOR: 'connect24_whatsapp',
       LINE: '1',
-      MESSAGES: [{ user: { id: '595981000111', name: 'Ana' }, message: { id: 'wamid.IN1', text: 'Hola' }, chat: { id: '595981000111' } }],
+      MESSAGES: [{ user: { id: '595981000111', name: 'Ana', phone: '+595981000111' }, message: { id: 'wamid.IN1', text: 'Hola' }, chat: { id: '595981000111' } }],
     });
   });
 

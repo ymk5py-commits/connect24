@@ -27,8 +27,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const publicUrl = need('PUBLIC_URL').replace(/\/+$/, '');
   const appSecret = need('APP_SECRET');
-  const clientId = need('BITRIX_CLIENT_ID');
-  const clientSecret = need('BITRIX_CLIENT_SECRET');
+  // Bitrix only shows client_id/client_secret AFTER the local app is created, and creating it needs this server
+  // reachable. So they are optional at boot: installation works with the AUTH_ID Bitrix posts; they are needed
+  // later to refresh tokens (see BitrixClient.refresh).
+  const clientId = env.BITRIX_CLIENT_ID?.trim() ?? '';
+  const clientSecret = env.BITRIX_CLIENT_SECRET?.trim() ?? '';
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -56,7 +59,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     connector: {
       id: env.CONNECTOR_ID ?? 'connect24_whatsapp',
-      name: env.CONNECTOR_NAME ?? 'WhatsApp (connect24)',
+      name: env.CONNECTOR_NAME ?? 'WhatsApp',
     },
     dbPath: env.DB_PATH ?? './data/connect24.db',
     assetsDir: env.ASSETS_DIR ?? './assets',

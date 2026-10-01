@@ -14,6 +14,15 @@ export class BitrixError extends Error {
 
 type FetchFn = typeof fetch;
 
+/** Waits (ms) before each retry when Bitrix answers QUERY_LIMIT_EXCEEDED. Bitrix did not process the call, so retrying is safe. */
+export const RATE_LIMIT_WAITS_MS = [700, 1500, 3000];
+
+export function isRateLimit(err: unknown): boolean {
+  return err instanceof BitrixError && /QUERY_LIMIT_EXCEEDED|too many requests/i.test(`${err.code} ${err.message}`);
+}
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** The only thing the rest of the app needs from a Bitrix client (easy to fake in tests). */
 export interface BitrixCaller {
   call<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
@@ -39,9 +48,22 @@ export class BitrixClient implements BitrixCaller {
     private readonly memberId: string,
     private readonly cfg: Config['bitrix'],
     private readonly fetchFn: FetchFn = fetch,
+    private readonly sleep: (ms: number) => Promise<void> = realSleep,
   ) {}
 
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.callOnce<T>(method, params);
+      } catch (err) {
+        const wait = RATE_LIMIT_WAITS_MS[attempt];
+        if (!isRateLimit(err) || wait === undefined) throw err;
+        await this.sleep(Math.round(wait * (1 + Math.random() * 0.25))); // jitter so colliding callers do not retry together
+      }
+    }
+  }
+
+  private async callOnce<T>(method: string, params: Record<string, unknown>): Promise<T> {
     let inst = this.store.getInstallation(this.memberId);
     if (!inst) throw new BitrixError('NOT_INSTALLED', `No installation for member ${this.memberId}`);
 
@@ -68,6 +90,9 @@ export class BitrixClient implements BitrixCaller {
     if (pending) return pending;
 
     const run = (async () => {
+      if (!this.cfg.clientId || !this.cfg.clientSecret) {
+        throw new BitrixError('NO_CLIENT_CREDENTIALS', 'Set BITRIX_CLIENT_ID and BITRIX_CLIENT_SECRET to refresh the Bitrix token');
+      }
       const url = new URL(`${this.cfg.oauthServer}/oauth/token/`);
       url.searchParams.set('grant_type', 'refresh_token');
       url.searchParams.set('client_id', this.cfg.clientId);

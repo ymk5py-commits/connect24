@@ -30,8 +30,9 @@ export function registerBitrixRoutes(app: FastifyInstance, ctx: AppContext): voi
       iconDataUri: ctx.connectorIcon,
       placementHandler: `${config.publicUrl}/bitrix/settings`,
     });
-    const eventsAdded = await ensureEventsBound(client, eventsUrl(memberId));
-    return { client, registration, eventsAdded };
+    const events = await ensureEventsBound(client, eventsUrl(memberId));
+    if (events.failed.length > 0) log.warn({ events: events.failed }, 'optional Bitrix events could not be bound');
+    return { client, registration, eventsAdded: events.added };
   }
 
   async function handleAuthError(reply: FastifyReply, err: unknown) {
@@ -117,7 +118,7 @@ export function registerBitrixRoutes(app: FastifyInstance, ctx: AppContext): voi
           authId: auth.accessToken,
           lineId,
           line,
-          webhookUrl: line ? `${config.publicUrl}/webhooks/botika/${line.routeKey}` : undefined,
+          webhookUrl: line ? `${config.publicUrl}/webhooks/whatsapp/${line.routeKey}` : undefined,
         }),
       );
     } catch (err) {
@@ -149,7 +150,7 @@ export function registerBitrixRoutes(app: FastifyInstance, ctx: AppContext): voi
           authId,
           lineId,
           line,
-          webhookUrl: line ? `${config.publicUrl}/webhooks/botika/${line.routeKey}` : undefined,
+          webhookUrl: line ? `${config.publicUrl}/webhooks/whatsapp/${line.routeKey}` : undefined,
           ...extra,
         }),
       );

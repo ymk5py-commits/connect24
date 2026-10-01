@@ -26,7 +26,11 @@ describe('Secrets', () => {
 
 describe('loadConfig', () => {
   it('lists every missing variable', () => {
-    expect(() => loadConfig({})).toThrow(/PUBLIC_URL.*APP_SECRET.*BITRIX_CLIENT_ID.*BITRIX_CLIENT_SECRET/);
+    expect(() => loadConfig({})).toThrow(/PUBLIC_URL.*APP_SECRET/);
+  });
+  it('boots without Bitrix client credentials (they only exist after the app is created)', () => {
+    const cfg = loadConfig(makeEnv({ BITRIX_CLIENT_ID: '', BITRIX_CLIENT_SECRET: '' }));
+    expect(cfg.bitrix.clientId).toBe('');
   });
   it('requires https and a long secret, and trims the trailing slash', () => {
     expect(() => loadConfig(makeEnv({ PUBLIC_URL: 'http://example.com' }))).toThrow(/https/);

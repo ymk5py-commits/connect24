@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BitrixError } from '../src/bitrix/client.js';
 import { buildServer } from '../src/server.js';
 import { DOMAIN, makeCtx, MEMBER, seedInstallation, seedLine } from './helpers.js';
 
@@ -31,21 +32,36 @@ describe('POST /bitrix/install', () => {
       PLACEMENT_HANDLER: 'https://connect24.example.com/bitrix/settings',
     });
     const bound = t.bitrix.of('event.bind').map((c) => c.params.event);
-    expect(bound).toEqual(['ONIMCONNECTORMESSAGEADD', 'ONIMCONNECTORLINEDELETE', 'ONIMCONNECTORSTATUSDELETE']);
+    expect(bound).toEqual(['OnImConnectorMessageAdd', 'OnImConnectorLineDelete', 'OnImConnectorStatusDelete']);
     expect(String(t.bitrix.of('event.bind')[0]?.params.handler)).toMatch(/^https:\/\/connect24\.example\.com\/bitrix\/events\?m=member123&sig=[0-9a-f]{64}$/);
   });
 
-  it('is idempotent: does not re-register or re-bind', async () => {
+  it('is idempotent: does not re-register, and "already binded" is not an error', async () => {
     const t = makeCtx({}, profileFetch(true));
     t.bitrix.responses['imconnector.list'] = ['connect24_whatsapp'];
+    t.bitrix.onCall = (m) => {
+      if (m === 'event.bind') throw new BitrixError('ERROR_EVENT_ALREADY', 'Handler already binded');
+    };
     const app = await buildServer(t.ctx);
-    // pretend the events are already bound with the exact handler URL
-    const handler = `https://connect24.example.com/bitrix/events?m=${MEMBER}&sig=${t.secrets.sign(MEMBER)}`;
-    t.bitrix.responses['event.get'] = ['ONIMCONNECTORMESSAGEADD', 'ONIMCONNECTORLINEDELETE', 'ONIMCONNECTORSTATUSDELETE'].map((event) => ({ event, handler }));
-
-    await app.inject({ method: 'POST', url: `/bitrix/install?DOMAIN=${DOMAIN}`, headers: FORM, payload: body });
+    const res = await app.inject({ method: 'POST', url: `/bitrix/install?DOMAIN=${DOMAIN}`, headers: FORM, payload: body });
+    expect(res.statusCode).toBe(200);
     expect(t.bitrix.of('imconnector.register')).toHaveLength(0);
-    expect(t.bitrix.of('event.bind')).toHaveLength(0);
+  });
+
+  it('survives optional events failing to bind, but not the operator-reply event', async () => {
+    const optionalFails = makeCtx({}, profileFetch(true));
+    optionalFails.bitrix.onCall = (m, p) => {
+      if (m === 'event.bind' && p.event !== 'OnImConnectorMessageAdd') throw new BitrixError('ERROR_EVENT', 'unknown event');
+    };
+    let app = await buildServer(optionalFails.ctx);
+    expect((await app.inject({ method: 'POST', url: `/bitrix/install?DOMAIN=${DOMAIN}`, headers: FORM, payload: body })).statusCode).toBe(200);
+
+    const primaryFails = makeCtx({}, profileFetch(true));
+    primaryFails.bitrix.onCall = (m) => {
+      if (m === 'event.bind') throw new BitrixError('ACCESS_DENIED', 'nope');
+    };
+    app = await buildServer(primaryFails.ctx);
+    expect((await app.inject({ method: 'POST', url: `/bitrix/install?DOMAIN=${DOMAIN}`, headers: FORM, payload: body })).statusCode).toBe(500);
   });
 
   it('rejects a portal that is not on the allow-list (and never calls it)', async () => {
@@ -123,12 +139,12 @@ describe('POST /bitrix/events', () => {
   });
 });
 
-describe('POST /webhooks/botika/:routeKey', () => {
+describe('/webhooks/whatsapp/:routeKey', () => {
   it('404 for unknown key, 200 for a known active line, 500 when forwarding fails', async () => {
     const t = makeCtx();
     const line = seedLine(t.store);
     const app = await buildServer(t.ctx);
-    const post = (key: string) => app.inject({ method: 'POST', url: `/webhooks/botika/${key}`, payload: { any: 'thing' } });
+    const post = (key: string) => app.inject({ method: 'POST', url: `/webhooks/whatsapp/${key}`, payload: { any: 'thing' } });
 
     expect((await post('nope')).statusCode).toBe(404);
     expect((await post(line.routeKey)).statusCode).toBe(200);
@@ -136,6 +152,20 @@ describe('POST /webhooks/botika/:routeKey', () => {
     t.provider.events = [{ kind: 'message', providerMessageId: 'w1', from: '1', timestamp: 1, text: 'x', origin: 'customer' }];
     t.bitrix.failOn.add('imconnector.send.messages');
     expect((await post(line.routeKey)).statusCode).toBe(500);
+  });
+
+  it("answers Meta's verification handshake only with the line's own verify token", async () => {
+    const t = makeCtx();
+    const line = seedLine(t.store);
+    const app = await buildServer(t.ctx);
+    const get = (key: string, token: string) =>
+      app.inject({ method: 'GET', url: `/webhooks/whatsapp/${key}?hub.mode=subscribe&hub.verify_token=${token}&hub.challenge=12345` });
+
+    const ok = await get(line.routeKey, line.routeKey);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).toBe('12345');
+    expect((await get(line.routeKey, 'wrong')).statusCode).toBe(403);
+    expect((await get('unknown', 'unknown')).statusCode).toBe(403);
   });
 });
 
@@ -154,7 +184,7 @@ describe('connector settings', () => {
 
     const line = seedLine(t.store);
     res = await app.inject({ method: 'POST', url: `/bitrix/settings?DOMAIN=${DOMAIN}`, headers: FORM, payload: settingsBody() });
-    expect(res.body).toContain(`/webhooks/botika/${line.routeKey}`);
+    expect(res.body).toContain(`/webhooks/whatsapp/${line.routeKey}`);
     expect(res.body).not.toContain('value="tok"'); // the provider token (seeded as "tok") is never echoed back
   });
 

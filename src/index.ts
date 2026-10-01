@@ -3,7 +3,7 @@ import { BitrixClient } from './bitrix/client.js';
 import { loadConfig } from './config.js';
 import type { AppContext } from './context.js';
 import { Secrets } from './crypto.js';
-import { BotikaProvider } from './providers/botika.js';
+import { WhatsAppCloudProvider } from './providers/whatsapp-cloud.js';
 import { buildServer } from './server.js';
 import { Bridge } from './services/bridge.js';
 import { Store } from './store.js';
@@ -18,11 +18,14 @@ ctx.bitrix = (memberId) => new BitrixClient(store, memberId, config.bitrix);
 
 const app = await buildServer(ctx, { logger: true });
 ctx.log = app.log;
+if (!config.bitrix.clientId || !config.bitrix.clientSecret) {
+  app.log.warn('BITRIX_CLIENT_ID / BITRIX_CLIENT_SECRET are not set: installation works, but Bitrix tokens cannot be refreshed (they expire after ~1 hour)');
+}
 ctx.bridge = new Bridge({
   store,
   connectorId: config.connector.id,
   bitrix: ctx.bitrix,
-  provider: (line) => new BotikaProvider({ baseUrl: line.baseUrl, token: line.token, phoneNumberId: line.phoneNumberId }),
+  provider: (line) => new WhatsAppCloudProvider({ baseUrl: line.baseUrl, token: line.token, phoneNumberId: line.phoneNumberId }),
   log: app.log,
 });
 

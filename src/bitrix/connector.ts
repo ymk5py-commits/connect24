@@ -1,4 +1,4 @@
-import type { BitrixCaller } from './client.js';
+import { BitrixError, type BitrixCaller } from './client.js';
 
 export interface OpenLine {
   id: string;
@@ -9,6 +9,8 @@ export interface ConnectorUser {
   /** Stable external id: the customer's WhatsApp number. */
   id: string;
   name: string;
+  /** E.164 with "+". Bitrix uses it to match/create the CRM contact. */
+  phone: string;
 }
 
 export interface ConnectorMessage {
@@ -24,7 +26,10 @@ export interface OutboundMessageEvent {
   chat: { id: string };
 }
 
-export const EVENTS = ['ONIMCONNECTORMESSAGEADD', 'ONIMCONNECTORLINEDELETE', 'ONIMCONNECTORSTATUSDELETE'] as const;
+/** Operator replies. Without this binding nothing reaches WhatsApp, so a failure here must abort the setup. */
+export const PRIMARY_EVENT = 'OnImConnectorMessageAdd';
+/** Housekeeping events: nice to have, never worth breaking the installation. */
+export const OPTIONAL_EVENTS = ['OnImConnectorLineDelete', 'OnImConnectorStatusDelete'] as const;
 
 export async function ensureConnectorRegistered(
   client: BitrixCaller,
@@ -43,22 +48,25 @@ export async function ensureConnectorRegistered(
   return 'registered';
 }
 
-/** Binds our events URL for every connector event that is not bound yet. */
-export async function ensureEventsBound(client: BitrixCaller, handlerUrl: string): Promise<string[]> {
-  const bound = await client.call<Array<{ event?: string; handler?: string }>>('event.get');
-  const already = new Set(
-    (Array.isArray(bound) ? bound : [])
-      .filter((b) => b.handler === handlerUrl)
-      .map((b) => String(b.event).toUpperCase()),
-  );
-
+/** Binds our events URL. Re-binding is harmless: Bitrix's "Handler already binded" counts as success. */
+export async function ensureEventsBound(
+  client: BitrixCaller,
+  handlerUrl: string,
+): Promise<{ added: string[]; failed: string[] }> {
   const added: string[] = [];
-  for (const event of EVENTS) {
-    if (already.has(event)) continue;
-    await client.call('event.bind', { event, handler: handlerUrl });
-    added.push(event);
+  const failed: string[] = [];
+
+  for (const event of [PRIMARY_EVENT, ...OPTIONAL_EVENTS]) {
+    try {
+      await client.call('event.bind', { event, handler: handlerUrl });
+      added.push(event);
+    } catch (err) {
+      if (err instanceof BitrixError && /already\s*bind/i.test(`${err.code} ${err.message}`)) continue;
+      if (event === PRIMARY_EVENT) throw err;
+      failed.push(event);
+    }
   }
-  return added;
+  return { added, failed };
 }
 
 export async function listOpenLines(client: BitrixCaller): Promise<OpenLine[]> {

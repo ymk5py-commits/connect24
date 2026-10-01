@@ -70,7 +70,7 @@ export class Bridge {
 
     await sendToBitrix(this.deps.bitrix(line.memberId), connectorId, line.lineId, [
       {
-        user: { id: msg.from, name: msg.profileName || `+${msg.from}` },
+        user: { id: msg.from, name: msg.profileName || `+${msg.from}`, phone: `+${msg.from}` },
         message: { id: msg.providerMessageId, date: msg.timestamp, text: msg.text },
         chat: { id: msg.from, name: msg.profileName || `+${msg.from}` },
       },

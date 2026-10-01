@@ -19,9 +19,12 @@ export class FakeBitrix implements BitrixCaller {
     'imopenlines.config.list.get': [{ ID: '1', LINE_NAME: 'Soporte' }],
   };
   failOn = new Set<string>();
+  /** Throw from here to simulate a Bitrix error for a given call. */
+  onCall?: (method: string, params: Record<string, unknown>) => void;
 
   async call<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     this.calls.push({ method, params });
+    this.onCall?.(method, params);
     if (this.failOn.has(method)) throw new Error(`boom ${method}`);
     return (this.responses[method] ?? true) as T;
   }

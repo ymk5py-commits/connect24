@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { BotikaProvider } from '../src/providers/botika.js';
+import { WhatsAppCloudProvider } from '../src/providers/whatsapp-cloud.js';
 import { ProviderError } from '../src/providers/types.js';
 
-const cfg = { baseUrl: 'https://api.botika.example/', token: 'tok', phoneNumberId: '555' };
+const cfg = { baseUrl: 'https://graph.example/v21.0/', token: 'tok', phoneNumberId: '555' };
 const wrap = (field: string, value: object) => ({ entry: [{ changes: [{ field, value }] }] });
 
-describe('BotikaProvider.parseWebhook', () => {
-  const p = new BotikaProvider(cfg);
+describe('WhatsAppCloudProvider.parseWebhook', () => {
+  const p = new WhatsAppCloudProvider(cfg);
 
   it('parses a customer text message with profile name', () => {
     const events = p.parseWebhook(
@@ -35,6 +35,21 @@ describe('BotikaProvider.parseWebhook', () => {
     expect(events).toEqual([{ kind: 'status', providerMessageId: 's1', status: 'read', recipient: '1' }]);
   });
 
+  it('ignores events addressed to another number (one forwarder, several numbers)', () => {
+    const events = p.parseWebhook(
+      wrap('messages', { metadata: { phone_number_id: '999' }, messages: [{ id: 'm', from: '1', type: 'text', text: { body: 'x' } }] }),
+    );
+    expect(events).toEqual([]);
+    const mine = p.parseWebhook(
+      wrap('messages', { metadata: { phone_number_id: '555' }, messages: [{ id: 'm', from: '1', type: 'text', text: { body: 'x' } }] }),
+    );
+    expect(mine).toHaveLength(1);
+  });
+
+  it('ignores coexistence history sync batches', () => {
+    expect(p.parseWebhook(wrap('history', { metadata: { phone_number_id: '555' }, history: [{ threads: [] }] }))).toEqual([]);
+  });
+
   it('never throws on garbage', () => {
     for (const junk of [null, 'x', 42, [], {}, { entry: 'no' }, { entry: [null, { changes: [1] }] }]) {
       expect(p.parseWebhook(junk)).toEqual([]);
@@ -42,7 +57,7 @@ describe('BotikaProvider.parseWebhook', () => {
   });
 });
 
-describe('BotikaProvider.sendText', () => {
+describe('WhatsAppCloudProvider.sendText', () => {
   it('posts to {base}/{phoneNumberId}/messages with bearer auth', async () => {
     let seen: { url: string; init: RequestInit } | undefined;
     const fetchFn = (async (url: string, init: RequestInit) => {
@@ -50,16 +65,16 @@ describe('BotikaProvider.sendText', () => {
       return new Response(JSON.stringify({ messages: [{ id: 'wamid.X' }] }), { status: 200 });
     }) as unknown as typeof fetch;
 
-    const out = await new BotikaProvider(cfg, fetchFn).sendText('595981000111', 'Hola');
+    const out = await new WhatsAppCloudProvider(cfg, fetchFn).sendText('595981000111', 'Hola');
     expect(out.messageId).toBe('wamid.X');
-    expect(seen?.url).toBe('https://api.botika.example/555/messages');
+    expect(seen?.url).toBe('https://graph.example/v21.0/555/messages');
     expect((seen?.init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
     expect(JSON.parse(String(seen?.init.body))).toMatchObject({ to: '595981000111', type: 'text', text: { body: 'Hola' } });
   });
 
   it('throws ProviderError with status on HTTP failure', async () => {
     const fetchFn = (async () => new Response(JSON.stringify({ error: { message: 'window closed' } }), { status: 400 })) as unknown as typeof fetch;
-    await expect(new BotikaProvider(cfg, fetchFn).sendText('1', 'x')).rejects.toMatchObject({ name: 'ProviderError', status: 400 });
-    await expect(new BotikaProvider(cfg, fetchFn).sendText('1', 'x')).rejects.toBeInstanceOf(ProviderError);
+    await expect(new WhatsAppCloudProvider(cfg, fetchFn).sendText('1', 'x')).rejects.toMatchObject({ name: 'ProviderError', status: 400 });
+    await expect(new WhatsAppCloudProvider(cfg, fetchFn).sendText('1', 'x')).rejects.toBeInstanceOf(ProviderError);
   });
 });
