@@ -1,0 +1,30 @@
+{
+  "name": "connect24",
+  "version": "0.1.0",
+  "description": "WhatsApp (Botika, coexistencia) conectado a Bitrix24 Canales Abiertos",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch --import tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/formbody": "^9.0.0",
+    "@fastify/static": "^10.1.5",
+    "fastify": "^5.12.5",
+    "qs": "^6.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/qs": "^6.15.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
